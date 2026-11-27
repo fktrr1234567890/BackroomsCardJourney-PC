@@ -25,7 +25,7 @@ class CorridorRenderer {
 
     private data class Stain(val x: Double, val y: Double, val r: Double, val a: Int)
     private data class Lamp(val y: Double, val w: Double, val flicker: Double, val phase: Double)
-    private data class Scratch(val x1: Double, val y1: Double, val x2: Double, val y2: Double, val a: Int)
+    private data class Scratch(val x1: Double, val y1: Double, val r1: Double, val r2: Double, val a: Int)
 
     private val stains = ArrayList<Stain>()
     private val lamps = ArrayList<Lamp>()
@@ -103,11 +103,11 @@ class CorridorRenderer {
                 )
             )
         }
-        repeat(14) {
+        repeat(22) {
             scratches.add(
                 Scratch(
-                    rand.nextDouble(), rand.nextDouble() * 0.55,
-                    rand.nextDouble(), rand.nextDouble() * 0.65, 18 + rand.nextInt(40)
+                    rand.nextDouble(), rand.nextDouble(),
+                    rand.nextDouble(), rand.nextDouble(), 18 + rand.nextInt(40)
                 )
             )
         }
@@ -162,15 +162,34 @@ class CorridorRenderer {
         rightWall.closePath()
         g2.fill(rightWall)
 
-        // 5. 墙面透视缝
-        g2.color = darken(wallBottom, 0.35)
-        g2.stroke = BasicStroke(1.5f)
-        for (i in 1..6) {
-            val yy = horizon - (horizon / 7.0) * i
-            val lx = (w * 0.5 - w * 0.5 * (i / 7.0))
-            g2.drawLine(lx.toInt(), yy.toInt(), vx.toInt(), horizon.toInt())
-            g2.drawLine((w - lx).toInt(), yy.toInt(), vx.toInt(), horizon.toInt())
+        // 5. 墙板接缝（只贴在两侧斜墙上，浅色主题下也很轻）
+        val seamColor = darken(wallBottom, 0.28)
+        g2.composite = java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, 0.30f)
+        g2.color = seamColor
+        g2.stroke = BasicStroke(1.0f)
+        for (i in 1..5) {
+            val k = i / 6.0
+            val yy = horizon * (1.0 - k)
+            val insetL = w * 0.5 * (1.0 - k) * 0.86 + w * 0.02
+            g2.drawLine(0, yy.toInt(), (vx - insetL).toInt(), yy.toInt())
+            g2.drawLine(w.toInt(), yy.toInt(), (vx + insetL).toInt(), yy.toInt())
         }
+        // 竖向板缝（近大远小）
+        for (i in 0..8) {
+            val k = i / 8.0
+            val xTopL = (vx - w * 0.10) - (w * 0.5 - w * 0.10) * k
+            val xBot = (vx - w * 0.13) - (w * 0.5 - w * 0.13) * k
+            g2.composite = java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, (0.10 + 0.14 * k).toFloat().coerceIn(0f, 1f))
+            g2.drawLine(xTopL.toInt(), horizon.toInt(), xBot.toInt(), (h * 0.92).toInt())
+            g2.drawLine((w - xTopL).toInt(), horizon.toInt(), (w - xBot).toInt(), (h * 0.92).toInt())
+        }
+        // 踢脚线
+        g2.composite = java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, 0.35f)
+        g2.color = darken(wallBottom, 0.55)
+        g2.stroke = BasicStroke(3f)
+        g2.drawLine(0, (h * 0.92).toInt(), (vx - w * 0.13).toInt(), horizon.toInt())
+        g2.drawLine(w.toInt(), (h * 0.92).toInt(), (vx + w * 0.13).toInt(), horizon.toInt())
+        g2.composite = java.awt.AlphaComposite.SrcOver
 
         // 6. 地砖网格
         g2.color = darken(floorColor, 0.5)
@@ -265,14 +284,23 @@ class CorridorRenderer {
         )
         g2.composite = java.awt.AlphaComposite.SrcOver
 
-        // 11. 划痕
-        g2.color = darken(wallBottom, 0.7)
-        g2.stroke = BasicStroke(1f)
+        // 11. 划痕（短裂纹，避免长斜线横穿画面）
+        g2.color = darken(wallBottom, 0.62)
+        g2.stroke = BasicStroke(1.0f)
         for (s in scratches) {
+            // 统统收在画面下半部的地板/墙脚，长度很短
+            val cx = s.x1 * w
+            val cy = h * 0.62 + s.y1 * h * 0.30
+            val len = w * 0.012 + w * 0.020 * s.r1
+            val ang = Math.PI * (0.15 + s.r2 * 0.7)
             g2.composite = java.awt.AlphaComposite.getInstance(
-                java.awt.AlphaComposite.SRC_OVER, s.a / 255f
+                java.awt.AlphaComposite.SRC_OVER, (s.a / 255f) * 0.45f
             )
-            g2.drawLine((s.x1 * w).toInt(), (s.y1 * h).toInt(), (s.x2 * w).toInt(), (s.y2 * h).toInt())
+            val seg = Path2D.Double()
+            seg.moveTo(cx, cy)
+            seg.lineTo(cx + len * Math.cos(ang), cy + len * Math.sin(ang) * 0.55)
+            seg.lineTo(cx + len * 1.7 * Math.cos(ang + 0.3), cy + len * 1.7 * Math.sin(ang + 0.3) * 0.55)
+            g2.draw(seg)
         }
         g2.composite = java.awt.AlphaComposite.SrcOver
 
@@ -306,6 +334,29 @@ class CorridorRenderer {
         )
         g2.paint = RadialGradientPaint(center, radius.coerceAtLeast(1f), fractions, colors)
         g2.fill(Rectangle2D.Double(0.0, 0.0, w, h))
+
+
+        // 16. 灯框与吊线（细节）
+        for (lamp in lamps) {
+            val ly = h * lamp.y
+            val lw = w * lamp.w
+            g2.color = darken(ceilColor, 0.45)
+            g2.stroke = BasicStroke(1.2f)
+            g2.draw(RoundRectangle2D.Double(vx - lw / 2 - 3, ly - 3, lw + 6, h * 0.018 + 6, 8.0, 8.0))
+            g2.stroke = BasicStroke(1f)
+            g2.drawLine((vx - lw * 0.35).toInt(), 0, (vx - lw * 0.35).toInt(), (ly - 3).toInt())
+            g2.drawLine((vx + lw * 0.35).toInt(), 0, (vx + lw * 0.35).toInt(), (ly - 3).toInt())
+        }
+        // 17. 地板灯光反射
+        g2.composite = java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, 0.05f)
+        g2.color = lightColor
+        for (lamp in lamps) {
+            val lw = w * lamp.w
+            val rx = vx - lw * 0.55
+            val ry = horizon + h * 0.06
+            g2.fill(Ellipse2D.Double(rx, ry, lw * 0.9, h * 0.10))
+        }
+        g2.composite = java.awt.AlphaComposite.SrcOver
 
         // 15. 尽头薄雾
         g2.composite = java.awt.AlphaComposite.getInstance(
