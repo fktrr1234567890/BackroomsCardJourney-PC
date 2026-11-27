@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    paths:
+      - 'release/VERSION'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 打 Release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2'
+
+      - name: 读取版本号
+        id: ver
+        shell: bash
+        run: echo "ver=$(tr -d '[:space:]' < release/VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: 构建并打包
+        shell: bash
+        run: |
+          gradle test --no-daemon
+          gradle installDist distZip --no-daemon
+
+      - name: 重命名产物
+        shell: bash
+        run: |
+          cp build/distributions/*.zip "BackroomsCardJourney-${{ steps.ver.outputs.ver }}-windows.zip"
+          ls -l *.zip
+
+      - name: 生成免安装 exe（jpackage app-image）
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          if (Test-Path build/appimg) { Remove-Item -Recurse -Force build/appimg }
+          jpackage --type app-image `
+            --name "BackroomsCardJourney" `
+            --app-version "${{ steps.ver.outputs.ver }}" `
+            --input "build/install/BackroomsCardJourney-pc/lib" `
+            --main-jar "BackroomsCardJourney-pc-${{ steps.ver.outputs.ver }}.jar" `
+            --main-class com.backrooms.cardjourney.MainKt `
+            --dest build/appimg
+          Compress-Archive -Path "build/appimg/BackroomsCardJourney" `
+            -DestinationPath "BackroomsCardJourney-${{ steps.ver.outputs.ver }}-windows-exe.zip" -Force
+
+      - name: 发布 Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.ver.outputs.ver }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "后室卡牌之旅 $TAG（Windows 桌面版）" \
+              --notes "自动构建产出的 Windows 分发包见下方 Assets。下载 zip 解压后运行 bin 目录下的 bat 即可。"
+          fi
+          gh release upload "$TAG" "BackroomsCardJourney-${{ steps.ver.outputs.ver }}-windows.zip" --clobber
+          if [ -f "BackroomsCardJourney-${{ steps.ver.outputs.ver }}-windows-exe.zip" ]; then
+            gh release upload "$TAG" "BackroomsCardJourney-${{ steps.ver.outputs.ver }}-windows-exe.zip" --clobber
+          fi
