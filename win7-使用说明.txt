@@ -1,11 +1,11 @@
-后室卡牌之旅 0.0.6 · Windows 7 版
+后室卡牌之旅 0.0.7 · Windows 7 版
 =================================
 
 【怎么运行】
 1. 先装 Java 8（JRE 8，32/64 位必须和你的系统一致）
    下载：https://adoptium.net/temurin/releases/?version=8
 2. 双击 run-win7.bat
-   （也可以手动：java -jar BackroomsCardJourney-pc-0.0.6-win7.jar）
+   （也可以手动：java -jar BackroomsCardJourney-pc-0.0.7-win7.jar）
 
 【为什么 Win7 要单独一个包】
 游戏本身编译成 Java 8 字节码（class 52），JDK 17 打出来的 exe 自带 JDK 17 运行时，

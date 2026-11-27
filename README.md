@@ -2,15 +2,15 @@
 
 《后室卡牌之旅》的 Windows 电脑端版本，规则、关卡、卡牌、道具与安卓版完全一致，界面从 Android 原生控件改写为 **Kotlin + Swing** 手工绘制，去掉一切 Android 依赖。
 
-当前版本：**0.0.6**
+当前版本：**0.0.7**
 
 ## 系统兼容性
 
 | 场景 | 要求 | 用哪个包 |
 | --- | --- | --- |
-| Windows 7 | Java 8（JRE 8，位数与系统一致） | `BackroomsCardJourney-0.0.6-win7-java8.zip` → `run-win7.bat` |
-| Windows 8 / 10 / 11 | 无（自带运行时） | `BackroomsCardJourney-0.0.6-windows-exe.zip` → 双击 `BackroomsCardJourney.exe` |
-| 任意 Windows + 已装 JDK 17 | 无 | `BackroomsCardJourney-0.0.6-windows.zip` → `bin\BackroomsCardJourney-pc.bat` |
+| Windows 7 | Java 8（JRE 8，位数与系统一致） | `BackroomsCardJourney-0.0.7-win7-java8.zip` → `run-win7.bat` |
+| Windows 8 / 10 / 11 | 无（自带运行时） | `BackroomsCardJourney-0.0.7-windows-exe.zip` → 双击 `BackroomsCardJourney.exe` |
+| 任意 Windows + 已装 JDK 17 | 无 | `BackroomsCardJourney-0.0.7-windows.zip` → `bin\BackroomsCardJourney-pc.bat` |
 
 兼容性做法：**编译目标固定为 Java 8 字节码（class 52）**，源码不使用任何 JDK 9+ 的 API，因此同一份 class 既能跑在 Win7 的 JRE 8 上，也能跑在更高版本的 JDK 上。Win7 包是单文件可执行 jar（已内联 kotlin-stdlib），不需要 jpackage、不需要改注册表。
 
@@ -54,7 +54,7 @@ run-win7.bat      :: 只有 JRE 8 的老系统，直接 java -jar 启动
 gradle distZip
 ```
 
-产物在 `build\distributions\BackroomsCardJourney-pc-0.0.6.zip`。
+产物在 `build\distributions\BackroomsCardJourney-pc-0.0.7.zip`。
 
 2. 单文件可执行 jar（Win7 / JRE 8 用，已内联 kotlin-stdlib）：
 
@@ -62,7 +62,7 @@ gradle distZip
 gradle fatJar
 ```
 
-产物在 `build\libs\BackroomsCardJourney-pc-0.0.6-win7.jar`。
+产物在 `build\libs\BackroomsCardJourney-pc-0.0.7-win7.jar`。
 
 3. 免安装 exe 目录（jpackage，需要 JDK 17+ 自带 jpackage）：
 
@@ -107,8 +107,14 @@ src/test/kotlin/com/backrooms/cardjourney/
 
 ## 发布
 
-改 `release/VERSION` 里的版本号并 push 到 `main`，`Release` 工作流会自动构建三种产物（分发包 / 单文件 jar / exe）并发布到 GitHub Release（tag 形如 `v0.0.6`）。
+改 `release/VERSION` 里的版本号并 push 到 `main`，`Release` 工作流会自动构建三种产物（分发包 / 单文件 jar / exe）并发布到 GitHub Release（tag 形如 `v0.0.7`）。
 
 ## 许可
 
 MIT License，见 [LICENSE](LICENSE)。
+
+## 更新日志
+
+- **0.0.7**：修复无限模式循环 bug。根因是 30 层通关时 `finishedAll` 被置为 true，进入无限模式后没清掉，导致每打完一轮又弹“全部 30 关通关”，选“进入无限”又把轮次归零回到第一轮，形成死循环。现在 `startStage` / `advance` / `enterInfiniteMode` 都会清掉该标记，无限模式只推进轮次，并补了 3 条回归测试。
+- **0.0.6**：字节码降为 Java 8（class 52），支持 Windows 7，新增单文件 jar 与 `run-win7.bat`。
+- **0.0.5**：Windows 桌面版首版（Swing 重写）。

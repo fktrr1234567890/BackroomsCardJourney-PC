@@ -32,7 +32,7 @@ import javax.swing.SwingConstants
 import javax.swing.Timer
 import javax.swing.border.EmptyBorder
 
-private const val APP_VERSION = "0.0.6"
+private const val APP_VERSION = "0.0.7"
 private const val ADMIN_PASSWORD = "15807050240"
 private const val ADMIN_TAP_COUNT = 7
 
@@ -301,6 +301,7 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
         engine.target = p.getProperty("target", "0").toIntOrNull() ?: 0
         engine.cleared = false
         engine.gameOver = false
+        engine.finishedAll = false
         engine.isSpecial = false
         engine.activeEvent = null
         engine.pendingNpc = null
@@ -815,9 +816,18 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
 
     private fun showClearedDialog() {
         val s = engine.stage
+        val wasInfinite = engine.infiniteMode
         info("通关！", "通过了「${s.name}」\n获得 ${s.reward} 金币")
         engine.advance()
-        if (engine.finishedAll) showAllClearedDialog() else refresh()
+        // 无限模式不再弹“全部 30 关通关”，直接把轮次往前推
+        if (engine.finishedAll && !engine.infiniteMode) {
+            showAllClearedDialog()
+        } else {
+            if (wasInfinite && engine.pendingNpc == null) {
+                info("无限回廊", "第 ${engine.score} 轮完成，继续挑战「${engine.stage.name}」")
+            }
+            refresh()
+        }
     }
 
     private fun showAllClearedDialog() {
@@ -827,9 +837,7 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
             arrayOf("进入无限", "主菜单")
         )
         if (picked == 0) {
-            engine.infiniteMode = true
-            engine.score = 0
-            engine.startStage(0)
+            engine.enterInfiniteMode()
             refresh()
         } else {
             showMainMenu()
@@ -861,7 +869,7 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
         }
         engine.isSpecial = false
         engine.advance()
-        if (engine.finishedAll) showAllClearedDialog() else refresh()
+        if (engine.finishedAll && !engine.infiniteMode) showAllClearedDialog() else refresh()
     }
 
     private fun showGameOver() {
@@ -1064,6 +1072,7 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
             6. 假随机：手牌越多怪越强越勤，手牌少时整关可能不出怪
             7. Windows 桌面版：Swing 界面、键盘 ESC 快速返回、存档写在用户目录
             8. 兼容下探：字节码降到 Java 8（class 52），Windows 7 起可运行，附 Win7 专用 jar 包
+            9. 修复无限模式通关后反复弹“进入无限”并退回第一轮的循环
         """.trimIndent()
         val body = label(
             "<html>" + text.replace("\n", "<br>") + "</html>", 13, C_TEXT
