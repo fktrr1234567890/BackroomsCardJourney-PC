@@ -1,0 +1,23 @@
+后室卡牌之旅 0.0.6 · Windows 7 版
+=================================
+
+【怎么运行】
+1. 先装 Java 8（JRE 8，32/64 位必须和你的系统一致）
+   下载：https://adoptium.net/temurin/releases/?version=8
+2. 双击 run-win7.bat
+   （也可以手动：java -jar BackroomsCardJourney-pc-0.0.6-win7.jar）
+
+【为什么 Win7 要单独一个包】
+游戏本身编译成 Java 8 字节码（class 52），JDK 17 打出来的 exe 自带 JDK 17 运行时，
+那套运行时只支持 Windows 10 及以上，所以 Win7 走“单文件 jar + 系统自带 JRE 8”这条路。
+
+【常见问题】
+- 提示 UnsupportedClassVersionError：说明系统里的 Java 低于 8，装 JRE 8 即可。
+- 提示找不到 java：JRE 没装或没进 PATH，重装 JRE 8 会自己写 PATH。
+- 双击没反应：右键“以管理员身份运行”一次，或在 cmd 里执行 run-win7.bat 看报错。
+- 存档位置：C:\Users\<你的用户名>\.backrooms_cardjourney\save.properties
+  删掉这个文件等于清档。
+
+【操作】
+点击手牌打出；点怪物切换目标；结束回合结算；买卡 / 刷牌 / 商人 / 道具在底部按钮；
+ESC 回主菜单（自动存档）。

@@ -32,7 +32,7 @@ import javax.swing.SwingConstants
 import javax.swing.Timer
 import javax.swing.border.EmptyBorder
 
-private const val APP_VERSION = "0.0.5"
+private const val APP_VERSION = "0.0.6"
 private const val ADMIN_PASSWORD = "15807050240"
 private const val ADMIN_TAP_COUNT = 7
 
@@ -1063,6 +1063,7 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
             5. 新增 NPC：幸存者 / 医生 / 士兵 / 商人 / 邪教徒 / 掠夺者，可交谈、可交易，孤立层级不刷新
             6. 假随机：手牌越多怪越强越勤，手牌少时整关可能不出怪
             7. Windows 桌面版：Swing 界面、键盘 ESC 快速返回、存档写在用户目录
+            8. 兼容下探：字节码降到 Java 8（class 52），Windows 7 起可运行，附 Win7 专用 jar 包
         """.trimIndent()
         val body = label(
             "<html>" + text.replace("\n", "<br>") + "</html>", 13, C_TEXT

@@ -2,6 +2,7 @@
 build/
 out/
 dist/
+win7/
 *.iml
 .idea/
 .vscode/
