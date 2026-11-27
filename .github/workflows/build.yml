@@ -1,0 +1,86 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows 构建与测试（JDK 17）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2'
+
+      - name: 编译 + 单元测试
+        run: gradle build --no-daemon --stacktrace
+
+      - name: 打包分发包
+        run: gradle distZip fatJar --no-daemon
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: BackroomsCardJourney-pc
+          path: |
+            build/distributions/*.zip
+            build/libs/*-win7.jar
+          if-no-files-found: error
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: build/reports/tests/test
+          if-no-files-found: ignore
+
+  java8:
+    name: Java 8 兼容验证（Win7）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2'
+
+      - name: JDK 8 上重新编译并跑测试
+        run: gradle clean build fatJar --no-daemon --stacktrace
+
+      - name: 校验字节码版本必须是 52（Java 8）
+        shell: bash
+        run: |
+          set -e
+          javap -verbose -cp build/libs/*-win7.jar com.backrooms.cardjourney.MainKt > javap.txt
+          grep "major version" javap.txt
+          if ! grep -q "major version: 52" javap.txt; then
+            echo "字节码不是 Java 8，Windows 7 跑不起来"
+            exit 1
+          fi
+          echo "OK：class 52，可在 JRE 8 / Windows 7 运行"
+
+      - name: 上传 Win7 jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: BackroomsCardJourney-win7
+          path: build/libs/*-win7.jar
+          if-no-files-found: error

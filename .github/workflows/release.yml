@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    paths:
+      - 'release/VERSION'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 打 Release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2'
+
+      - name: 读取版本号
+        id: ver
+        shell: bash
+        run: echo "ver=$(tr -d '[:space:]' < release/VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: 构建并打包
+        shell: bash
+        run: |
+          gradle test installDist distZip fatJar --no-daemon
+
+      - name: 重命名分发包
+        shell: bash
+        run: |
+          cp build/distributions/*.zip "BackroomsCardJourney-${{ steps.ver.outputs.ver }}-windows.zip"
+          ls -l *.zip
+
+      - name: 组装 Win7 包（单文件 jar + 启动脚本）
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.ver }}"
+          New-Item -ItemType Directory -Path win7 -Force | Out-Null
+          Copy-Item "build/libs/BackroomsCardJourney-pc-$v-win7.jar" "win7\"
+          Copy-Item "run-win7.bat" "win7\"
+          Copy-Item "win7-使用说明.txt" "win7\"
+          Compress-Archive -Path "win7\*" -DestinationPath "BackroomsCardJourney-$v-win7-java8.zip" -Force
+          Get-ChildItem "BackroomsCardJourney-$v-win7-java8.zip" | Format-Table Name, Length
+
+      - name: 生成免安装 exe（jpackage app-image）
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.ver }}"
+          if (Test-Path build/appimg) { Remove-Item -Recurse -Force build/appimg }
+          jpackage --type app-image `
+            --name "BackroomsCardJourney" `
+            --app-version "$v" `
+            --input "build/install/BackroomsCardJourney-pc/lib" `
+            --main-jar "BackroomsCardJourney-pc-$v.jar" `
+            --main-class com.backrooms.cardjourney.MainKt `
+            --dest build/appimg
+          Compress-Archive -Path "build/appimg/BackroomsCardJourney" `
+            -DestinationPath "BackroomsCardJourney-$v-windows-exe.zip" -Force
+
+      - name: 发布 Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          V="${{ steps.ver.outputs.ver }}"
+          TAG="v$V"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "后室卡牌之旅 $TAG（Windows 桌面版）" \
+              --notes "Windows 端 $TAG，字节码 Java 8（class 52），最低支持 Windows 7。
+
+          Assets 说明：
+          - BackroomsCardJourney-$V-win7-java8.zip：Win7 用。解压后装 JRE 8，双击 run-win7.bat
+          - BackroomsCardJourney-$V-windows-exe.zip：Win10/11 用。解压后双击 BackroomsCardJourney.exe，自带运行时
+          - BackroomsCardJourney-$V-windows.zip：通用分发包，需已装 JDK 8+，跑 bin 目录里的 bat"
+          fi
+          gh release upload "$TAG" "BackroomsCardJourney-$V-windows.zip" --clobber
+          gh release upload "$TAG" "BackroomsCardJourney-$V-win7-java8.zip" --clobber
+          if [ -f "BackroomsCardJourney-$V-windows-exe.zip" ]; then
+            gh release upload "$TAG" "BackroomsCardJourney-$V-windows-exe.zip" --clobber
+          fi
