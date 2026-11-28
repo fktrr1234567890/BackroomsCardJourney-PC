@@ -32,7 +32,7 @@ import javax.swing.SwingConstants
 import javax.swing.Timer
 import javax.swing.border.EmptyBorder
 
-internal const val APP_VERSION = "0.1.0-beta2"
+internal const val APP_VERSION = "0.1.0-beta3"
 private const val ADMIN_PASSWORD = "15807050240"
 private const val ADMIN_TAP_COUNT = 7
 
@@ -580,12 +580,23 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
     }
 
     internal fun endTurn() {
-        when (engine.endTurn()) {
+        when (engine.beginTurnEnd()) {
             1 -> { openEvent(); return }
             2 -> { refresh(); return }
             3 -> { gameView?.openMerchant(); return }
+            4 -> return
         }
-        refresh()
+        // 先播怪物齐射动画，动画结束再结算伤害并进入下一回合
+        val gv2 = gameView
+        if (gv2 != null) {
+            gv2.playCombatAnimation {
+                engine.finishTurnEnd()
+                refresh()
+            }
+        } else {
+            engine.finishTurnEnd()
+            refresh()
+        }
     }
 
     internal fun restartRun() {

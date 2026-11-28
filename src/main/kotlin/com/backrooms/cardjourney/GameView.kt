@@ -46,6 +46,10 @@ class GameView(
     private var menuVerClicks = 0
     private var bagHint = ""
     private var merchantOpen = false
+    /** 卡牌预览：第一次点击置顶放大，第二次点击才真正打出 */
+    private var previewCard = -1
+    private var attackAnimating = false
+    private var attackAnimStart = 0L
     private var shopHint = ""
 
     private var pulse = 0.0
@@ -118,6 +122,7 @@ class GameView(
         drawStatus(g)
         drawMonsters(g)
         drawEventBar(g)
+        if (attackAnimating) drawAttackAnim(g)
         drawHand(g)
         drawSideButtons(g)
 
@@ -363,6 +368,7 @@ class GameView(
         val pivotY = (height - 10).toDouble()
         val baseY = height - 246
         for (i in n - 1 downTo 0) {
+            if (i == previewCard && n > 1) continue
             val mid = (n - 1) / 2.0
             val t = if (n == 1) 0.0 else (i - mid) / mid
             val angle = t * maxAngle * spread
@@ -374,6 +380,92 @@ class GameView(
             g2.translate(-cw / 2, -ch - 20 + lift)
             drawCard(g2, engine.hand[i], cw, ch, i == hoverCard)
             g2.dispose()
+        }
+        // 选中的牌最后画：抬高、放大、压在其它牌上面
+        if (previewCard in engine.hand.indices) {
+            val mid = (n - 1) / 2.0
+            val t = if (n == 1) 0.0 else (previewCard - mid) / mid
+            val x = width / 2.0 + t * (n - 1) * 42.0 - cw * 1.18 / 2
+            val top = height - 330.0
+            val g2 = g.create() as Graphics2D
+            g2.translate(x, top)
+            drawCard(g2, engine.hand[previewCard], cw * 1.18, ch * 1.18, true)
+            g2.dispose()
+            drawCardPreview(g)
+        }
+    }
+
+    /** 卡牌详情：点一次先看清效果，再点一次才打出去 */
+    private fun drawCardPreview(g: Graphics2D) {
+        if (previewCard !in engine.hand.indices) return
+        val c = engine.hand[previewCard]
+        val pw = 340.0
+        val ph = 150.0
+        val px = width / 2 - pw / 2
+        val py = height - 500.0
+        g.color = Color(0x0E, 0x0E, 0x0E, 235)
+        g.fill(RoundRectangle2D.Double(px, py, pw, ph, 14.0, 14.0))
+        g.color = Color(0xE8, 0xC5, 0x47, 170)
+        g.stroke = BasicStroke(1.4f)
+        g.draw(RoundRectangle2D.Double(px, py, pw, ph, 14.0, 14.0))
+        g.font = Font("Microsoft YaHei", Font.BOLD, 15)
+        g.color = Color(0xF2, 0xF2, 0xF2)
+        g.drawString(c.name, (px + 16).toFloat(), (py + 30).toFloat())
+        g.font = Font("Microsoft YaHei", Font.PLAIN, 11)
+        g.color = C_AMBER
+        g.drawString(c.rarity + " · " + c.category.label + " · " + c.cost + " 金", (px + 16).toFloat(), (py + 52).toFloat())
+        g.color = Color(0xAA, 0xAA, 0xAA)
+        g.drawString("数值 " + c.v1 + " / " + c.v2 + "   幸运 " + c.luck + "   机制 " + (if (c.skill.isEmpty()) "无" else c.skill), (px + 16).toFloat(), (py + 74).toFloat())
+        val desc = c.desc
+        g.font = Font("Microsoft YaHei", Font.PLAIN, 11)
+        g.color = Color(0xDD, 0xDD, 0xDD)
+        var line = ""
+        var y = py + 98.0
+        for (ch in desc) {
+            if (g.fontMetrics.stringWidth(line + ch) > pw - 32) {
+                g.drawString(line, (px + 16).toFloat(), y.toFloat()); y += 18.0; line = ch.toString()
+            } else line += ch
+        }
+        if (line.isNotEmpty()) g.drawString(line, (px + 16).toFloat(), y.toFloat())
+        g.color = Color(0xE8, 0xC5, 0x47, 200)
+        g.drawString("再次点击卡牌即可打出 · 点击别处取消", (px + 16).toFloat(), (py + ph - 12).toFloat())
+    }
+
+    /** 怪物回合动画：每只怪前冲 + 伤害数字，播完再结算 */
+    fun playCombatAnimation(onDone: () -> Unit) {
+        if (attackAnimating) return
+        attackAnimating = true
+        attackAnimStart = System.currentTimeMillis()
+        val timer = javax.swing.Timer(16) { ev ->
+            val elapsed = System.currentTimeMillis() - attackAnimStart
+            repaint()
+            if (elapsed > 1150) {
+                (ev.source as javax.swing.Timer).stop()
+                attackAnimating = false
+                onDone()
+            }
+        }
+        timer.start()
+    }
+
+    private fun drawAttackAnim(g: Graphics2D) {
+        val elapsed = (System.currentTimeMillis() - attackAnimStart) / 1150.0
+        val n = min(engine.monsters.size, 3)
+        val spacing = 190
+        val startX = width / 2 - (n - 1) * spacing / 2
+        for ((k, a) in engine.attacks.withIndex()) {
+            if (a.index >= n) continue
+            val phase = (elapsed * 2.2 - k * 0.22).coerceIn(0.0, 1.0)
+            val cx = startX + a.index * spacing
+            val cy = (108 + height - 320) / 2 + 10
+            val lunge = (Math.sin(phase * Math.PI) * 46).toInt()
+            g.font = Font("Microsoft YaHei", Font.BOLD, 22)
+            val txt = "-" + a.damage
+            val alpha = (255 * (1.0 - phase * 0.6)).toInt().coerceIn(0, 255)
+            g.color = Color(0xE0, 0x52, 0x52, alpha)
+            g.drawString(txt, cx - g.fontMetrics.stringWidth(txt) / 2, cy + 70 - lunge)
+            g.color = Color(0xE0, 0x52, 0x52, (alpha * 0.6).toInt())
+            g.fillOval(cx - 52, cy + 4 - lunge, 104, 26)
         }
     }
 
@@ -1027,8 +1119,16 @@ class GameView(
         // 手牌
         val ci = cardAt(x, y)
         if (ci >= 0) {
-            if (engine.playCard(ci)) host.afterAction() else repaint()
+            if (previewCard == ci) {
+                previewCard = -1
+                if (engine.playCard(ci)) host.afterAction() else repaint()
+            } else {
+                previewCard = ci
+                repaint()
+            }
+            return
         }
+        if (previewCard >= 0) { previewCard = -1; repaint() }
     }
 
     override fun mouseMoved(e: MouseEvent) {

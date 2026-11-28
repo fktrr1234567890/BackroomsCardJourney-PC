@@ -5,6 +5,9 @@ import kotlin.math.min
 
 data class Monster(val name: String, var hp: Int, val maxHp: Int, var atk: Int, val skill: String)
 
+/** 半回合制：一只怪物这一轮的攻击，供 UI 逐个播放动画 */
+data class MonsterAttack(val index: Int, val name: String, val damage: Int, val pierce: Boolean, val note: String = "")
+
 data class PlayerChar(
     val id: Int,
     val name: String,
@@ -85,6 +88,23 @@ class GameEngine {
     var activeEvent: GameEvent? = null
     var specialStageName = ""
     var isSpecial = false
+
+    // ---- 半回合制：怪物齐射动画 ----
+    /** 点击结束回合后生成的怪物攻击列表，UI 播放完动画再调用 finishTurnEnd() */
+    var attacks = mutableListOf<MonsterAttack>()
+    var animating = false
+    /** 本关被卡牌“加热”的强度：出牌越多，后面刷出的怪越强、越多 */
+    var threat = 0.0
+    /** 清空怪物后进入的休整层（临时覆盖当前关卡） */
+    var overrideStage: Stage? = null
+    /** 本关是否因清空怪物而通关（决定下一关给休整层） */
+    var clearedByWipe = false
+    private var pendingCorrosive = false
+    private var pendingFear = false
+    private var pendingSilence = false
+    private var pendingSpawner = false
+    /** 上一次使用的战斗牌，供「镜像」类机制复用 */
+    var lastCard: Card? = null
 
     // ---- 商店报价：本回合固定，取消对话框不会重刷 ----
     var offerCards = mutableListOf<Card>()
@@ -168,7 +188,9 @@ class GameEngine {
     }
 
     val stage: Stage
-        get() = if (infiniteMode) StageLibrary.infinite(score) else StageLibrary.stages[levelIndex.coerceIn(0, StageLibrary.stages.size - 1)]
+        get() = overrideStage
+            ?: if (infiniteMode) StageLibrary.infinite(score)
+            else StageLibrary.stages[levelIndex.coerceIn(0, StageLibrary.stages.size - 1)]
 
     fun newGame(char: PlayerChar) {
         equipment.clear()
@@ -218,15 +240,18 @@ class GameEngine {
         offerCards.clear()
         offerRerolls = 0
         offersTurn = -1
+        threat = 0.0
+        attacks.clear()
+        animating = false
+        clearedByWipe = false
+        pendingMerchant = false
+        merchantStock.clear()
         monsters.clear()
         hand.clear()
         hand.addAll(CardLibrary.startingHand(HAND_TARGET))
         ensureOffers()
-        if (s.goal == GoalType.KILL_ALL || s.goal == GoalType.BOSS) {
-            for (i in 0 until s.monsterCount) {
-                spawnMonster()
-            }
-        }
+        // 半回合制：除非是休整层，开局必定刷几只怪
+        if (!s.noSpawn) spawnWave(extra = if (s.goal == GoalType.KILL_ALL || s.goal == GoalType.BOSS) 1 else 0)
         message = "进入 " + s.name
     }
 
@@ -283,10 +308,20 @@ class GameEngine {
         val s = stage
         val nm = monsterNames.random()
         val sk = monsterSkills.random()
-        val hp = (s.monsterHp * threatScale()).toInt().coerceAtLeast(1)
-        val atk = (s.monsterAtk * threatScale()).toInt().coerceAtLeast(1)
+        // 威胁值来自玩家出过的牌：越猛出牌，后续怪越硬
+        val scale = (threatScale() + threat * 0.10).coerceIn(0.65, 2.6)
+        val hp = (s.monsterHp * scale).toInt().coerceAtLeast(1)
+        val atk = (s.monsterAtk * (1.0 + threat * 0.06)).toInt().coerceAtLeast(1)
         monsters.add(Monster(nm, hp, hp, atk, sk))
         message = if (hp > s.monsterHp) "有东西从黑暗里挤了出来" else "有什么东西在靠近"
+    }
+
+    /** 每个回合结束后的固定刷怪波：特殊/休整层不刷 */
+    fun spawnWave(extra: Int = 0) {
+        if (stage.isSpecialStage || stage.noSpawn) return
+        val bonus = (threat * 0.25).toInt()
+        val count = (2 + bonus + extra).coerceIn(1, 3)
+        repeat(count) { if (monsters.size < MAX_MONSTERS) spawnMonster() }
     }
 
     /** 按当前手牌压力决定是否额外刷怪（不是每回合必刷） */
@@ -308,6 +343,9 @@ class GameEngine {
         hand.removeAt(index)
         progress += c.progress
         message = "使用了 " + c.name
+        // 出牌会推高本关威胁：之后刷出的怪更强、更多
+        val tierW = when (c.rarity) { "稀有" -> 2.0; "精良" -> 1.0; "史诗" -> 3.0; "传说" -> 4.0; else -> 0.0 }
+        threat = (threat + 0.7 + tierW * 0.25 - c.luck * 0.12).coerceAtLeast(0.0)
 
         when (c.category) {
             CardCategory.FOOD -> {
@@ -329,15 +367,52 @@ class GameEngine {
                     val idx = target.coerceIn(0, monsters.size - 1)
                     var d = c.v1 + equipAtk()
                     if (c.skill == "撕裂") d += c.luck * 2
+                    // ---- 新机制：高风险高回报的创意打法 ----
+                    if (c.skill == "献祭") {
+                        val cost = (maxHp / 5).coerceAtLeast(5)
+                        hp = (hp - cost).coerceAtLeast(1)
+                        d += cost * 2
+                        message = "献祭了 " + cost + " 点生命"
+                    }
+                    if (c.skill == "转化") {
+                        sanity = max(0, sanity - 8)
+                        d += c.v1 * 2
+                        message = "把理智烧成了伤害"
+                    }
+                    if (c.skill == "共鸣") d += hand.size * 5
+                    if (c.skill == "赌徒") {
+                        if (Math.random() < 0.5) { d *= 3; message = "赌赢了！三倍伤害" }
+                        else { hp = (hp - 6).coerceAtLeast(1); message = "赌输了，反噬 6 点" }
+                    }
+                    if (c.skill == "处决" && monsters[idx].hp <= monsters[idx].maxHp * 0.3) {
+                        monsters.removeAt(idx)
+                        if (monsters.isEmpty()) target = 0 else target = target.coerceIn(0, monsters.size - 1)
+                        message = "处决！"
+                        checkState(); return true
+                    }
+                    if (c.skill == "诅咒") {
+                        monsters[idx].hp = (monsters[idx].hp * 0.7).toInt()
+                        monsters[idx].atk = (monsters[idx].atk * 0.8).toInt().coerceAtLeast(1)
+                    }
                     val crit = Math.random() < (c.luck + luck) * 0.04
                     if (crit) d *= 2
                     if (c.skill == "连击") {
                         hitMonster(idx, d / 2)
                         if (idx < monsters.size) hitMonster(idx, d / 2)
+                    } else if (c.skill == "连锁") {
+                        for (i in monsters.indices.reversed()) hitMonster(i, (d * 0.6).toInt())
                     } else {
                         hitMonster(idx, d)
                     }
                     if (c.skill == "吸血") hp = min(maxHp, hp + d / 4)
+                    if (c.skill == "熵增") {
+                        when ((0..3).random()) {
+                            0 -> { if (monsters.isNotEmpty()) hitMonster(target.coerceIn(0, monsters.size - 1), d * 3); message = "熵增：伤害翻三倍" }
+                            1 -> { hp = min(maxHp, hp + 15); message = "熵增：生命 +15" }
+                            2 -> { coins += 20; message = "熵增：金币 +20" }
+                            else -> { if (monsters.size < MAX_MONSTERS) spawnMonster(); message = "熵增：又多了一只" }
+                        }
+                    }
                     if (crit) message = "暴击！" + c.name
                 } else {
                     progress += c.v2
@@ -358,6 +433,7 @@ class GameEngine {
                 shield += c.v2 * 3
                 if (c.skill == "疾行") ap += 1
                 if (c.skill == "闪避") dodge += 1
+                if (c.skill == "时停") dodge += monsters.size
             }
             CardCategory.MENTAL -> {
                 sanity = min(100, sanity + c.v1 + if (c.skill == "净化") c.luck * 5 else 0)
@@ -372,6 +448,12 @@ class GameEngine {
                 progress += c.v2
             }
         }
+        // 回溯：这张牌回到手牌，等于白嫖一次
+        if (c.skill == "回溯" && hand.size < HAND_MAX) {
+            hand.add(c)
+            ap += 1
+        }
+        if (c.category == CardCategory.COMBAT) lastCard = c
         // 幸运掉落：卡牌自带的幸运度会影响额外金币
         if (c.luck > 0 && Math.random() < c.luck * 0.06) coins += 1
         if (luck > 0 && Math.random() < luck * 0.05) coins += 1
@@ -411,82 +493,108 @@ class GameEngine {
         if (monsters.isEmpty()) target = 0 else target = target.coerceIn(0, monsters.size - 1)
     }
 
-    /** 结束回合；返回 0 成功，1 事件待结算，2 NPC 待处理，3 商人待处理（不会静默推进回合） */
-    fun endTurn(): Int {
-        if (gameOver || cleared || isSpecial) return 0
+    /**
+     * 半回合制第一步：计算这一轮怪物的攻击，交给 UI 播动画。
+     * 返回 0 可播放；1 事件待结算；2 NPC 待处理；3 商人待处理。
+     */
+    fun beginTurnEnd(): Int {
+        if (gameOver || cleared || isSpecial || animating) return 4
         if (activeEvent != null) return 1
         if (pendingNpc != null) return 2
         if (pendingMerchant && merchantStock.isNotEmpty()) return 3
-        var dmg = 0      // 可被护盾抵挡
-        var pierce = 0   // 破甲：直接穿透护盾
-        val spawner = monsters.any { it.skill == "召唤" }
-        var corrosive = false
-        var fear = false
-        for (m in monsters) {
+
+        attacks.clear()
+        pendingCorrosive = false
+        pendingFear = false
+        pendingSilence = false
+        pendingSpawner = false
+        for (i in monsters.indices) {
+            val m = monsters[i]
             var atk = m.atk
             if (m.skill == "狂暴" && m.hp < m.maxHp / 2) atk *= 2
             if (m.skill == "连击") atk += m.atk / 2
-            if (m.skill == "破甲") pierce += atk else dmg += atk
             if (m.skill == "吸血") m.hp = min(m.maxHp, m.hp + m.atk / 2)
             if (m.skill == "回血") m.hp = min(m.maxHp, m.hp + 10)
             if (m.skill == "噬魂") sanity = max(0, sanity - 3)
-            if (m.skill == "腐蚀") corrosive = true
-            if (m.skill == "恐惧") fear = true
-            if (m.skill == "静默" && Math.random() < 0.4) silenced = true
+            if (m.skill == "腐蚀") pendingCorrosive = true
+            if (m.skill == "恐惧") pendingFear = true
+            if (m.skill == "静默" && Math.random() < 0.4) pendingSilence = true
+            if (m.skill == "召唤") pendingSpawner = true
+            attacks.add(MonsterAttack(i, m.name, atk, m.skill == "破甲", m.skill))
         }
-        if (corrosive) {
+        animating = true
+        message = "怪物开始行动……"
+        return 0
+    }
+
+    /** 半回合制第二步：动画播完后结算伤害、刷下一波怪、进入下一回合 */
+    fun finishTurnEnd(): Int {
+        if (!animating) return 0
+        animating = false
+        var dmg = 0
+        var pierce = 0
+        for (a in attacks) {
+            if (a.pierce) pierce += a.damage else dmg += a.damage
+        }
+        if (pendingCorrosive) {
             maxHp = max(20, maxHp - 2)
             hp = min(hp, maxHp)
             message = "有东西在腐蚀你的身体"
         }
-        if (fear) sanity = max(0, sanity - 4)
+        if (pendingFear) sanity = max(0, sanity - 4)
         if (dodge > 0) {
             dmg = 0
             pierce = 0
             dodge--
             message = "你闪开了这一轮攻击"
         }
-        if (spawner && monsters.size < MAX_MONSTERS && Math.random() < 0.3) spawnMonster()
         if (shield > 0) {
             val a = min(shield, dmg)
             shield -= a
             dmg -= a
         }
         if (dmg + pierce > 0) hp -= dmg + pierce
+        if (pendingSpawner && monsters.size < MAX_MONSTERS && Math.random() < 0.3) spawnMonster()
+        attacks.clear()
 
         turn++
         ap = (if (silenced) 2 else 3) + stage.bonusAp
-        silenced = false
+        silenced = pendingSilence
         if (stage.sanityDrain > 0) sanity = max(0, sanity - stage.sanityDrain)
         boughtThisTurn = false
-        // 每回合报价过期，下一回合重新报价（同回合取消对话框不会重刷）
         offerCards.clear()
         offerRerolls = 0
-
         if (turn % 2 == 0) sanity = max(0, sanity - 1)
+
+        // 每回合结束都会继续刷怪（特殊层级不刷）
+        spawnWave()
+
+        val handEmpty = hand.isEmpty()
+        refillHand()
 
         if (turn > 1 && Math.random() < 0.15 && activeEvent == null) {
             activeEvent = allEvents.random()
-            // 事件可能在结算前就已经把人打死（扣血/扣理智），这里先判定一次状态
             checkState()
             return 0
         }
-
-        val s = stage
-        if (s.goal != GoalType.KILL_ALL && s.goal != GoalType.BOSS && turn % s.spawnEvery == 0) {
-            trySpawn()
-        }
-        refillHand()
-        rollMerchant()
+        // 手牌打空且怪物还在：下一回合开始前 100% 出现商人
+        rollMerchant(force = handEmpty && monsters.isNotEmpty())
         checkState()
         return 0
     }
 
+    /** 兼容旧调用：一次完成（测试与不需要动画的场合） */
+    fun endTurn(): Int {
+        val r = beginTurnEnd()
+        if (r != 0) return r
+        return finishTurnEnd()
+    }
+
     /** 回满手牌（回合结束给牌，取代原来的手动刷牌） */
-    private fun rollMerchant() {
+    private fun rollMerchant(force: Boolean = false) {
         pendingMerchant = false
         merchantStock.clear()
-        if (Math.random() < MERCHANT_CHANCE) {
+        if (force || Math.random() < MERCHANT_CHANCE) {
             merchantStock.addAll(EquipmentLibrary.random(3))
             pendingMerchant = true
         }
@@ -545,7 +653,8 @@ class GameEngine {
         }
         if (cleared || isSpecial) return
         val s = stage
-        val won = when (s.goal) {
+        // 半回合制：把这一层的怪清空就算过关；特殊层按各自目标结算
+        val won = if (!s.isSpecialStage) (monsters.isEmpty() || progress >= s.goalValue) else when (s.goal) {
             GoalType.KILL_ALL, GoalType.BOSS -> monsters.isEmpty()
             GoalType.SURVIVE -> turn >= s.goalValue
             else -> progress >= s.goalValue
@@ -553,7 +662,9 @@ class GameEngine {
         if (won) {
             cleared = true
             completed++
-            coins += s.reward + s.bonusCoins
+            if (!s.isSpecialStage) clearedByWipe = true
+            // 进度清空得越多，清算时给的金币越多
+            coins += s.reward + s.bonusCoins + progress / 12
             message = "通关！"
         }
     }
@@ -564,6 +675,15 @@ class GameEngine {
     fun advance() {
         cleared = false
         finishedAll = false
+        // 1) 刚清空一层 → 先去休整层（无限模式本身就有 ! 层，不再额外插休整层）
+        if (clearedByWipe && !infiniteMode && overrideStage == null) {
+            startBonusStage()
+            return
+        }
+        // 2) 休整层结束 → 回到正常推进
+        if (overrideStage != null) {
+            overrideStage = null
+        }
         if (infiniteMode) {
             score++
             pendingStageIndex = levelIndex
@@ -587,6 +707,14 @@ class GameEngine {
         if (!rollNpc(StageLibrary.stages[next])) startStage(next)
     }
 
+    private fun startBonusStage() {
+        clearedByWipe = false
+        overrideStage = StageLibrary.bonus("休整层 · 无怪区", stage.theme)
+        startStage(levelIndex)
+        activeEvent = goodEvent()
+        message = "清空了这一层，前面是一间空房间——先喘口气"
+    }
+
     /** 30 层通关后进入无限模式：轮次归零、清掉通关标记，避免重复弹“全部通关” */
     fun enterInfiniteMode() {
         infiniteMode = true
@@ -596,6 +724,8 @@ class GameEngine {
         gameOver = false
         pendingNpc = null
         activeEvent = null
+        overrideStage = null
+        clearedByWipe = false
         startStage(0)
     }
 
@@ -736,6 +866,8 @@ class GameEngine {
             else -> progress = max(progress, s.goalValue)
         }
         checkState()
+        // 管理员跳关不插休整层，保持原有推进语义
+        clearedByWipe = false
     }
 
     fun adminHeal() {

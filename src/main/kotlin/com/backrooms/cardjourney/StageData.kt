@@ -31,6 +31,8 @@ data class Stage(
     val sanityDrain: Int = 0,
     /** 是否无限模式专属特殊层级（! 与 !-!） */
     val isSpecialStage: Boolean = false,
+    /** 休整层：完全不刷怪，只结算奖励 */
+    val noSpawn: Boolean = false,
     /** 背景配色偏移量，让每一关的走廊观感都不同 */
     val paletteShift: Int = index
 )
@@ -70,6 +72,15 @@ object StageLibrary {
     )
 
     /** 无限模式专属：第 7、14、21… 轮是「!」，第 11、22、33… 轮是「!-!」 */
+    /** 清空怪物后的休整层：不刷怪、只给奖励与喘息 */
+    fun bonus(name: String, theme: Int): Stage = Stage(
+        10000 + theme, name, "这一层是空的——至少现在是这样",
+        GoalType.SURVIVE, 2, 99, 1, 1, 0,
+        0xFFFFFFCC.toInt(), 0xFFD4C485.toInt(),
+        theme = theme, isSpecialStage = true, noSpawn = true,
+        bonusCoins = 18, bonusAp = 1, paletteShift = theme + 41
+    )
+
     fun isSpecialRound(round: Int): Boolean {
         val r = round + 1
         return r % 7 == 0 || r % 11 == 0

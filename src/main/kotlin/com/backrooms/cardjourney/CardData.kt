@@ -165,12 +165,14 @@ object CardLibrary {
                 // 稀有度越高的牌附带额外机制与幸运度：幸运影响暴击、掉落与事件走向
                 val luck = if (adjIdx < 9) 0 else (adjIdx % 4) + 1
                 val skill = if (adjIdx < 9) "" else when (cat) {
-                    CardCategory.COMBAT -> listOf("", "连击", "吸血", "撕裂")[adjIdx % 4]
-                    CardCategory.DEFENSE -> listOf("", "反震", "坚壁")[adjIdx % 3]
-                    CardCategory.MOVEMENT -> listOf("", "疾行", "闪避")[adjIdx % 3]
-                    CardCategory.MENTAL -> listOf("", "净化", "回响")[adjIdx % 3]
-                    CardCategory.TRADE -> listOf("", "掠夺", "议价")[adjIdx % 3]
-                    CardCategory.UTILITY -> listOf("", "巧手", "藏匿")[adjIdx % 3]
+                    CardCategory.COMBAT -> listOf(
+                        "", "连击", "吸血", "撕裂", "献祭", "赌徒", "连锁", "转化", "共鸣", "处决", "诅咒", "熵增"
+                    )[adjIdx % 12]
+                    CardCategory.DEFENSE -> listOf("", "反震", "坚壁", "时停", "闪避")[adjIdx % 5]
+                    CardCategory.MOVEMENT -> listOf("", "疾行", "闪避", "时停", "回溯")[adjIdx % 5]
+                    CardCategory.MENTAL -> listOf("", "净化", "回响", "转化")[adjIdx % 4]
+                    CardCategory.TRADE -> listOf("", "掠夺", "议价", "赌徒")[adjIdx % 4]
+                    CardCategory.UTILITY -> listOf("", "巧手", "藏匿", "回溯")[adjIdx % 4]
                     else -> ""
                 }
                 if (luck > 0) d += " · 幸运 $luck"
