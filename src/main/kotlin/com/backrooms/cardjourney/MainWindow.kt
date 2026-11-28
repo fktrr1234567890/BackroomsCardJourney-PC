@@ -32,7 +32,7 @@ import javax.swing.SwingConstants
 import javax.swing.Timer
 import javax.swing.border.EmptyBorder
 
-internal const val APP_VERSION = "0.1.0-beta1"
+internal const val APP_VERSION = "0.1.0-beta2"
 private const val ADMIN_PASSWORD = "15807050240"
 private const val ADMIN_TAP_COUNT = 7
 
@@ -580,7 +580,11 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
     }
 
     internal fun endTurn() {
-        engine.endTurn()
+        when (engine.endTurn()) {
+            1 -> { openEvent(); return }
+            2 -> { refresh(); return }
+            3 -> { gameView?.openMerchant(); return }
+        }
         refresh()
     }
 
