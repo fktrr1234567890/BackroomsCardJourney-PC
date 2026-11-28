@@ -207,6 +207,7 @@ class GameEngine {
         cleared = false
         npcMeetings = 0
         inventory.clear()
+        hand.clear()
         if (char.startItem) {
             inventory.add(ItemLibrary.random(1)[0])
         }
@@ -247,8 +248,8 @@ class GameEngine {
         pendingMerchant = false
         merchantStock.clear()
         monsters.clear()
-        hand.clear()
-        hand.addAll(CardLibrary.startingHand(HAND_TARGET))
+        // 跨关不刷新手牌：只有手牌真的空了（新开局）才发初始手牌
+        if (hand.isEmpty()) hand.addAll(CardLibrary.startingHand(HAND_TARGET))
         ensureOffers()
         // 半回合制：除非是休整层，开局必定刷几只怪
         if (!s.noSpawn) spawnWave(extra = if (s.goal == GoalType.KILL_ALL || s.goal == GoalType.BOSS) 1 else 0)

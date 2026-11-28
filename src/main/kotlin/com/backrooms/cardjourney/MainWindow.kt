@@ -32,7 +32,7 @@ import javax.swing.SwingConstants
 import javax.swing.Timer
 import javax.swing.border.EmptyBorder
 
-internal const val APP_VERSION = "0.1.0-beta3"
+internal const val APP_VERSION = "0.1.0-beta4"
 private const val ADMIN_PASSWORD = "15807050240"
 private const val ADMIN_TAP_COUNT = 7
 
@@ -413,6 +413,7 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
         menuItem("开始") { beginGameFlow() }
         menuItem("继续") { continueGame() }
         menuItem("选项") { showSettings() }
+        menuItem("教程") { showTutorial() }
         menuItem("退出") { dispose() }
 
         root.add(Box.createVerticalGlue())
@@ -609,6 +610,35 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
     internal fun backToMainMenu() {
         saveGame()
         showMainMenu()
+    }
+
+    internal fun openTutorial() { showTutorial() }
+
+    /** 教程窗口：三页签，主菜单与对局内共用 */
+    private fun showTutorial() {
+        val dlg = javax.swing.JDialog(this, "游玩教程", true)
+        dlg.defaultCloseOperation = javax.swing.WindowConstants.DISPOSE_ON_CLOSE
+        val tabs = javax.swing.JTabbedPane()
+        for (page in Tutorial.pages) {
+            val area = javax.swing.JTextArea()
+            area.isEditable = false
+            area.lineWrap = true
+            area.wrapStyleWord = true
+            area.background = Color(0x14, 0x14, 0x14)
+            area.foreground = Color(0xE8, 0xE8, 0xE8)
+            area.caretColor = Color(0xE8, 0xC5, 0x47)
+            area.font = Font("Microsoft YaHei", Font.PLAIN, 14)
+            area.text = page.title + "\n\n" + page.lines.joinToString("\n\n")
+            area.border = javax.swing.BorderFactory.createEmptyBorder(14, 16, 14, 16)
+            val sp = javax.swing.JScrollPane(area)
+            sp.border = javax.swing.BorderFactory.createEmptyBorder()
+            tabs.addTab(page.tab, sp)
+        }
+        tabs.background = Color(0x1B, 0x1B, 0x1B)
+        dlg.contentPane = tabs
+        dlg.setSize(760, 600)
+        dlg.setLocationRelativeTo(this)
+        dlg.isVisible = true
     }
 
     internal fun openSettings() {

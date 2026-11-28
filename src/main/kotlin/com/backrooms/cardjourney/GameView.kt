@@ -674,7 +674,7 @@ class GameView(
         g.color = Color(0, 0, 0, 190)
         g.fillRect(0, 0, width, height)
         val pw = 380
-        val ph = 320
+        val ph = 376
         val px = (width - pw) / 2
         val py = (height - ph) / 2
         g.color = Color(0x12, 0x12, 0x12, 245)
@@ -688,7 +688,7 @@ class GameView(
         val title = "菜单"
         g.drawString(title, (width - g.fontMetrics.stringWidth(title)) / 2, py + 46)
 
-        val items = listOf("继续" to "resume", "重来一次" to "restart", "选项" to "opts", "退出至主界面" to "exit")
+        val items = listOf("继续" to "resume", "重来一次" to "restart", "选项" to "opts", "游玩教程" to "tutor", "退出至主界面" to "exit")
         var y = py + 68
         for ((t, k) in items) {
             val bw = pw - 60
@@ -1024,13 +1024,14 @@ class GameView(
                 return
             }
             var by = py + 68
-            val items = listOf("resume", "restart", "opts", "exit")
+            val items = listOf("resume", "restart", "opts", "tutor", "exit")
             for (k in items) {
                 if (inRect(x, y, px + 30, by, pw - 60, 46)) {
                     when (k) {
                         "resume" -> { menuOverlay = false; repaint() }
                         "restart" -> { closeOverlays(); host.restartRun() }
                         "opts" -> { menuOverlay = false; host.openSettings() }
+                        "tutor" -> { menuOverlay = false; host.openTutorial(); repaint() }
                         "exit" -> { closeOverlays(); host.backToMainMenu() }
                     }
                     return
@@ -1154,7 +1155,7 @@ class GameView(
             val pw = 380; val ph = 320
             val px = (width - pw) / 2; val py = (height - ph) / 2
             var by = py + 68
-            val keys = listOf("resume", "restart", "opts", "exit")
+            val keys = listOf("resume", "restart", "opts", "tutor", "exit")
             for (k in keys) {
                 if (inRect(x, y, px + 30, by, pw - 60, 46)) return k
                 by += 56
