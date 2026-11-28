@@ -32,7 +32,7 @@ import javax.swing.SwingConstants
 import javax.swing.Timer
 import javax.swing.border.EmptyBorder
 
-internal const val APP_VERSION = "0.0.9"
+internal const val APP_VERSION = "0.1.0-beta1"
 private const val ADMIN_PASSWORD = "15807050240"
 private const val ADMIN_TAP_COUNT = 7
 
@@ -73,6 +73,10 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
 
     private val saveFile = File(System.getProperty("user.home"), ".backrooms_cardjourney/save.properties")
     private val settings = Properties()
+
+    init {
+        setAppIcon()
+    }
 
     private val flicker = Timer(500) {
         if (screen == "game") stage.repaint()
@@ -352,11 +356,22 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
         val s = engine.stage
         if (force || currentTheme != s.theme || !music.isPlaying()) {
             currentTheme = s.theme
-            music.start(BgmThemes.forStage(engine.levelIndex, s.theme), musicVol)
+            music.start(BgmThemes.forStage(if (engine.infiniteMode) 1000 + engine.score else engine.levelIndex, s.theme), musicVol)
         }
     }
 
     // ---------- 主菜单 ----------
+
+    /** 窗口与应用图标：走廊 + 发光门 + 手绘卡牌 */
+    private fun setAppIcon() {
+        try {
+            val url = javaClass.classLoader.getResource("icon.png") ?: return
+            val img = javax.imageio.ImageIO.read(url)
+            setIconImage(img)
+        } catch (e: Exception) {
+            // 图标缺失不影响运行
+        }
+    }
 
     private fun showMainMenu() {
         stage.showScene = true
@@ -410,6 +425,38 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
 
     private fun beginGameFlow() {
         if (adminGate) showAdminPassword() else showCharacterSelect()
+    }
+
+    /** 对局内「菜单 → 左下角版本号连点 6 次」的入口，直接唤起密码框 */
+    internal fun requestAdmin() {
+        if (adminActive) return
+        showAdminPasswordInGame()
+    }
+
+    internal fun requestAdminInline() {
+        if (adminActive) return
+        showAdminPasswordInGame()
+    }
+
+    private fun showAdminPasswordInGame() {
+        val field = JTextField()
+        field.font = Font("Microsoft YaHei", Font.PLAIN, 14)
+        val box = panel(C_BG)
+        box.layout = BoxLayout(box, BoxLayout.Y_AXIS)
+        box.add(label("输入管理员密码", 13, C_DIM))
+        box.add(spacer(6))
+        box.add(field)
+        val res = JOptionPane.showConfirmDialog(
+            this, box, "管理员验证", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE
+        )
+        if (res == JOptionPane.OK_OPTION && field.text.trim() == ADMIN_PASSWORD) {
+            adminActive = true
+            info("管理员验证", "管理员已登录")
+        } else if (res == JOptionPane.OK_OPTION) {
+            info("管理员验证", "密码错误")
+        }
+        adminGate = false
+        refresh()
     }
 
     private fun showAdminPassword() {
@@ -1081,18 +1128,6 @@ class MainWindow : JFrame("后室卡牌之旅 v$APP_VERSION") {
 
         val ver = label("关于详情 v$APP_VERSION", 30, C_ACCENT, true)
         ver.alignmentX = Component.LEFT_ALIGNMENT
-        ver.addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent) {
-                versionTaps++
-                if (versionTaps >= ADMIN_TAP_COUNT) {
-                    versionTaps = 0
-                    adminGate = true
-                    info("提示", "管理员入口已打开：下次开始游戏会要求输入密码")
-                } else if (versionTaps >= 4) {
-                    info("提示", "再点 ${ADMIN_TAP_COUNT - versionTaps} 次…")
-                }
-            }
-        })
         root.add(ver)
         root.add(spacer(16))
 

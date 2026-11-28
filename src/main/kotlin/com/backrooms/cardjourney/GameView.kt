@@ -11,6 +11,7 @@ import java.awt.event.MouseEvent
 import java.awt.event.MouseListener
 import java.awt.event.MouseMotionListener
 import java.awt.geom.AffineTransform
+import java.awt.geom.Arc2D
 import java.awt.geom.Ellipse2D
 import java.awt.geom.Path2D
 import java.awt.geom.RoundRectangle2D
@@ -41,6 +42,9 @@ class GameView(
     private var eventFadeStart = 0L
 
     private var menuOverlay = false
+    private var backpackOpen = false
+    private var menuVerClicks = 0
+    private var bagHint = ""
     private var merchantOpen = false
     private var shopHint = ""
 
@@ -89,6 +93,7 @@ class GameView(
     fun closeOverlays() {
         menuOverlay = false
         merchantOpen = false
+        backpackOpen = false
     }
 
     fun openMenuOverlay() { menuOverlay = true; repaint() }
@@ -103,11 +108,12 @@ class GameView(
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
 
         renderer.draw(g, width.toDouble(), height.toDouble())
-        // 顶部与底部压暗，保证文字压在背景上仍然清楚
-        g.color = Color(0, 0, 0, 150)
-        g.fillRect(0, 0, width, 92)
-        g.color = Color(0, 0, 0, 190)
-        g.fillRect(0, height - 300, width, 300)
+        // 上下黑边已移除：只在顶部留一层极淡的渐变，让状态字压得住背景，底部完全透明
+        g.paint = GradientPaint(
+            0f, 0f, Color(0, 0, 0, 78),
+            0f, 84f, Color(0, 0, 0, 0)
+        )
+        g.fillRect(0, 0, width, 84)
 
         drawStatus(g)
         drawMonsters(g)
@@ -120,6 +126,7 @@ class GameView(
             g.fillRect(0, 0, width, height)
         }
         if (merchantOpen) drawMerchant(g)
+        if (backpackOpen) drawBackpack(g)
         if (menuOverlay) drawMenuOverlay(g)
         g.dispose()
     }
@@ -137,7 +144,8 @@ class GameView(
         g.drawString(roundText, width - 20 - fm.stringWidth(roundText), y + 14)
         g.font = Font("Microsoft YaHei", Font.PLAIN, 11)
         g.color = Color(0xB0, 0xB0, 0xB0)
-        val sub = if (engine.infiniteMode) "最高通 ${engine.completed}" else engine.stage.name
+        val sub = if (engine.stage.isSpecialStage) "特殊层级 " + engine.stage.name + " · " + engine.stage.subtitle
+        else if (engine.infiniteMode) "最高通 ${engine.completed} · 轮次 ${engine.score}" else engine.stage.name
         g.drawString(sub, width - 20 - g.fontMetrics.stringWidth(sub), y + 32)
 
         // 圆形管理入口（只有登录管理员后出现）
@@ -166,12 +174,17 @@ class GameView(
             "进度 " + progressText() to Color(0x5A, 0xA8, 0xE0),
             "行动力 ${engine.ap}" to Color(0x66, 0xBB, 0x6A)
         )
+        val extraChips = ArrayList<Pair<String, Color>>()
+        if (engine.luck > 0) extraChips.add("幸运 ${engine.luck}" to Color(0xF3, 0xD3, 0x5E))
+        if (engine.shield > 0) extraChips.add("护盾 ${engine.shield}" to Color(0x90, 0xCA, 0xF9))
+        if (engine.dodge > 0) extraChips.add("闪避 ${engine.dodge}" to Color(0xB2, 0xDF, 0xDB))
         g.font = Font("Microsoft YaHei", Font.BOLD, 12)
+        val all = chips + extraChips
         var total = 0
-        for ((t, _) in chips) total += g.fontMetrics.stringWidth(t) + 26
+        for ((t, _) in all) total += g.fontMetrics.stringWidth(t) + 26
         var x = (width - total) / 2
         val cy2 = y + 34
-        for ((t, c) in chips) {
+        for ((t, c) in all) {
             val w = g.fontMetrics.stringWidth(t) + 22
             g.color = Color(c.red, c.green, c.blue, 40)
             g.fill(RoundRectangle2D.Float(x.toFloat(), (cy2 - 3).toFloat(), w.toFloat(), 20f, 10f, 10f))
@@ -308,9 +321,17 @@ class GameView(
         g.stroke = BasicStroke(1.6f)
         g.draw(RoundRectangle2D.Float(x.toFloat(), y.toFloat(), w.toFloat(), 46f, 8f, 8f))
 
-        val text = if (engine.activeEvent != null) "事件：" + engine.activeEvent!!.title + " —— 点击查看" else eventText
+        val ev = engine.activeEvent
+        val text = if (ev != null) {
+            val tag = if (ev.tag == "good") "【好事】" else if (ev.tag == "bad") "【危险】" else "【异象】"
+            tag + ev.title + " —— 点击查看"
+        } else eventText
         g.font = Font("Microsoft YaHei", Font.PLAIN, 13)
-        g.color = Color(0xE6, 0xE6, 0xE6, (230 * alpha).toInt())
+        g.color = when (ev?.tag) {
+            "good" -> Color(0x9C, 0xE0, 0x9C, (235 * alpha).toInt())
+            "bad" -> Color(0xE0, 0x8A, 0x8A, (235 * alpha).toInt())
+            else -> Color(0xE6, 0xE6, 0xE6, (230 * alpha).toInt())
+        }
         val t = clip(text, g.fontMetrics, w - 40)
         g.drawString(t, x + 18, y + 29)
 
@@ -480,24 +501,60 @@ class GameView(
     }
 
     private fun drawSideButtons(g: Graphics2D) {
-        // 左下：背包 + 道具
-        drawButton(g, 14, height - 246, 76, 34, "背包", "bag")
-        drawButton(g, 14, height - 206, 76, 34, "道具", "item")
+        // 左下：背包图标（道具与装备都在里面）
+        drawBagButton(g, 14, height - 128, 54, 54)
         // 右下：结束回合
-        drawButton(g, width - 132, height - 246, 118, 40, "结束回合", "end", filled = true)
-        // 装备槽提示
+        drawButton(g, width - 152, height - 120, 138, 44, "结束回合", "end", filled = true)
+        // 底部极简提示：装备与幸运
         g.font = Font("Microsoft YaHei", Font.PLAIN, 10)
-        g.color = Color(0x9A, 0x9A, 0x9A)
-        g.drawString("装备 ${engine.equipment.size}/${MAX_EQUIP} · 攻+${engine.equipAtk()} 甲+${engine.equipArmor()}",
-            14, height - 166)
-        var y = height - 150
-        for (e in engine.equipment.take(4)) {
-            g.color = Color(0x1C, 0x1C, 0x1C, 210)
-            g.fill(RoundRectangle2D.Float(14f, (y - 13).toFloat(), 150f, 18f, 6f, 6f))
-            g.color = if (e.slot == EquipSlot.WEAPON) Color(0xE8, 0x8A, 0x5A) else if (e.slot == EquipSlot.ARMOR) Color(0x5A, 0xA8, 0xE0) else Color(0x8B, 0xC3, 0x4A)
-            g.font = Font("Microsoft YaHei", Font.PLAIN, 10)
-            g.drawString(clip(e.name, g.fontMetrics, 142), 19, y)
-            y += 21
+        g.color = Color(0xBD, 0xBD, 0xBD, 190)
+        val tip = "装备 ${engine.equipment.size}/${MAX_EQUIP} · 道具 ${engine.inventory.size}" +
+                (if (engine.luck > 0) " · 幸运 ${engine.luck}" else "")
+        g.drawString(tip, 76, height - 96)
+        if (bagHint.isNotEmpty()) {
+            g.font = Font("Microsoft YaHei", Font.PLAIN, 11)
+            g.color = Color(0xE8, 0xC5, 0x47, 200)
+            g.drawString(bagHint, 76, height - 78)
+        }
+    }
+
+    /** 手绘背包图标：不用文字按钮，图标本身即入口 */
+    private fun drawBagButton(g: Graphics2D, x: Int, y: Int, w: Int, h: Int) {
+        val hover = hoverButton == "bag"
+        val r = RoundRectangle2D.Float(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat(), 12f, 12f)
+        g.color = if (hover) Color(0x2E, 0x2E, 0x2E, 225) else Color(0x14, 0x14, 0x14, 190)
+        g.fill(r)
+        g.color = Color(0xE8, 0xC5, 0x47, if (hover) 230 else 160)
+        g.stroke = BasicStroke(1.5f)
+        g.draw(r)
+        // 背包主体：包身 + 顶部提手 + 前袋 + 肩带
+        val cx = x + w / 2.0
+        val bodyTop = y + 16.0
+        g.color = Color(0xE8, 0xC5, 0x47)
+        g.fill(RoundRectangle2D.Float((cx - 14).toFloat(), bodyTop.toFloat(), 28f, 26f, 8f, 8f))
+        // 提手
+        g.color = Color(0xF3, 0xD3, 0x5E)
+        g.stroke = BasicStroke(2.4f)
+        g.draw(Arc2D.Float((cx - 7).toFloat(), (bodyTop - 9).toFloat(), 14f, 16f, 0f, 180f, Arc2D.OPEN))
+        // 前袋与包盖
+        g.color = Color(0x1B, 0x1B, 0x1B)
+        g.fill(RoundRectangle2D.Float((cx - 10).toFloat(), (bodyTop + 12).toFloat(), 20f, 9f, 3f, 3f))
+        g.color = Color(0xB8, 0x9A, 0x2E)
+        g.fill(RoundRectangle2D.Float((cx - 14).toFloat(), (bodyTop + 2).toFloat(), 28f, 5f, 3f, 3f))
+        // 肩带
+        g.color = Color(0xE8, 0xC5, 0x47)
+        g.stroke = BasicStroke(1.6f)
+        g.draw(Arc2D.Float((cx - 19).toFloat(), (bodyTop + 4).toFloat(), 10f, 18f, 90f, 120f, Arc2D.OPEN))
+        g.draw(Arc2D.Float((cx + 9).toFloat(), (bodyTop + 4).toFloat(), 10f, 18f, -30f, 120f, Arc2D.OPEN))
+        // 数量角标
+        if (engine.inventory.size > 0) {
+            val n = engine.inventory.size
+            g.color = Color(0xE0, 0x52, 0x52)
+            g.fill(Ellipse2D.Float((x + w - 13).toFloat(), (y - 4).toFloat(), 17f, 17f))
+            g.font = Font("Microsoft YaHei", Font.BOLD, 9)
+            g.color = Color.WHITE
+            val t = if (n > 9) "9+" else n.toString()
+            g.drawString(t, x + w - 9 - g.fontMetrics.stringWidth(t) / 2, y + 8)
         }
     }
 
@@ -549,6 +606,131 @@ class GameView(
         g.font = Font("Microsoft YaHei", Font.PLAIN, 10)
         g.color = Color(0x80, 0x80, 0x80)
         g.drawString("v${APP_VERSION}  ·  存档自动保存", px + 16, py + ph - 10)
+    }
+
+    /** 背包界面：装备 + 持有道具 + 手牌，一次看全 */
+    private fun bpRect(): IntArray {
+        val pw = min(width - 80, 700)
+        val ph = 440
+        return intArrayOf((width - pw) / 2, (height - ph) / 2, pw, ph)
+    }
+
+    private fun itemRowRect(i: Int): IntArray {
+        val r = bpRect()
+        val px = r[0]
+        val py = r[1]
+        val pw = r[2]
+        return intArrayOf(px + 24, py + 210 + i * 40, (pw * 0.60).toInt() - 40, 34)
+    }
+
+    private fun drawBackpack(g: Graphics2D) {
+        g.color = Color(0, 0, 0, 205)
+        g.fillRect(0, 0, width, height)
+        val r = bpRect()
+        val px = r[0]; val py = r[1]; val pw = r[2]; val ph = r[3]
+        g.color = Color(0x10, 0x10, 0x10, 246)
+        g.fill(RoundRectangle2D.Float(px.toFloat(), py.toFloat(), pw.toFloat(), ph.toFloat(), 14f, 14f))
+        g.color = Color(0xE8, 0xC5, 0x47, 190)
+        g.stroke = BasicStroke(1.6f)
+        g.draw(RoundRectangle2D.Float(px.toFloat(), py.toFloat(), pw.toFloat(), ph.toFloat(), 14f, 14f))
+
+        g.font = Font("Microsoft YaHei", Font.BOLD, 20)
+        g.color = C_AMBER
+        g.drawString("背包", px + 24, py + 38)
+        g.font = Font("Microsoft YaHei", Font.PLAIN, 11)
+        g.color = Color(0x8F, 0x8F, 0x8F)
+        g.drawString("装备 ${engine.equipment.size}/$MAX_EQUIP · 道具 ${engine.inventory.size} · 手牌 ${engine.hand.size}", px + 76, py + 37)
+
+        // ---- 装备槽 ----
+        g.font = Font("Microsoft YaHei", Font.BOLD, 12)
+        g.color = Color(0xCC, 0xCC, 0xCC)
+        g.drawString("装备", px + 24, py + 66)
+        val tileW = (pw * 0.60 - 56) / 2
+        var ty = py + 78
+        for (i in 0 until MAX_EQUIP) {
+            val col = i % 2
+            val row = i / 2
+            val tx = px + 24 + col * (tileW + 12)
+            val ty2 = ty + row * 52
+            val e = engine.equipment.getOrNull(i)
+            g.color = Color(0x1C, 0x1C, 0x1C, 235)
+            g.fill(RoundRectangle2D.Float(tx.toFloat(), ty2.toFloat(), tileW.toFloat(), 44f, 8f, 8f))
+            g.color = Color(0x44, 0x44, 0x44)
+            g.stroke = BasicStroke(1f)
+            g.draw(RoundRectangle2D.Float(tx.toFloat(), ty2.toFloat(), tileW.toFloat(), 44f, 8f, 8f))
+            g.font = Font("Microsoft YaHei", Font.PLAIN, 11)
+            if (e == null) {
+                g.color = Color(0x66, 0x66, 0x66)
+                g.drawString("空槽", (tx + 10).toInt(), (ty2 + 26).toInt())
+            } else {
+                g.color = when (e.slot) {
+                    EquipSlot.WEAPON -> Color(0xE8, 0x8A, 0x5A)
+                    EquipSlot.ARMOR -> Color(0x5A, 0xA8, 0xE0)
+                    else -> Color(0x8B, 0xC3, 0x4A)
+                }
+                g.drawString(clip(e.name, g.fontMetrics, tileW - 20), (tx + 10).toInt(), (ty2 + 17).toInt())
+                g.font = Font("Microsoft YaHei", Font.PLAIN, 10)
+                g.color = Color(0x9A, 0x9A, 0x9A)
+                val b = StringBuilder()
+                if (e.atk != 0) b.append("攻+${e.atk} ")
+                if (e.armor != 0) b.append("甲+${e.armor} ")
+                g.drawString(clip(b.toString().trim(), g.fontMetrics, tileW - 20), (tx + 10).toInt(), (ty2 + 33).toInt())
+            }
+        }
+
+        // ---- 道具 ----
+        g.font = Font("Microsoft YaHei", Font.BOLD, 12)
+        g.color = Color(0xCC, 0xCC, 0xCC)
+        g.drawString("道具（点击使用）", px + 24, py + 200)
+        if (engine.inventory.isEmpty()) {
+            g.font = Font("Microsoft YaHei", Font.PLAIN, 11)
+            g.color = Color(0x77, 0x77, 0x77)
+            g.drawString("背包里还没有东西", px + 24, py + 226)
+        }
+        val shown = min(engine.inventory.size, 5)
+        for (i in 0 until shown) {
+            val it = engine.inventory[i]
+            val rr = itemRowRect(i)
+            val hover = hoverButton == "item$i"
+            g.color = if (hover) Color(0x2A, 0x26, 0x18, 240) else Color(0x18, 0x18, 0x18, 230)
+            g.fill(RoundRectangle2D.Float(rr[0].toFloat(), rr[1].toFloat(), rr[2].toFloat(), rr[3].toFloat(), 6f, 6f))
+            g.color = Color(it.category.color).darker()
+            g.stroke = BasicStroke(1f)
+            g.draw(RoundRectangle2D.Float(rr[0].toFloat(), rr[1].toFloat(), rr[2].toFloat(), rr[3].toFloat(), 6f, 6f))
+            g.font = Font("Microsoft YaHei", Font.PLAIN, 11)
+            g.color = Color(it.category.color)
+            g.drawString(clip(it.name, g.fontMetrics, rr[2] - 12), rr[0] + 8, rr[1] + 14)
+            g.color = Color(0x99, 0x99, 0x99)
+            g.font = Font("Microsoft YaHei", Font.PLAIN, 10)
+            g.drawString(clip(it.desc, g.fontMetrics, rr[2] - 12), rr[0] + 8, rr[1] + 28)
+        }
+        if (engine.inventory.size > shown) {
+            g.font = Font("Microsoft YaHei", Font.PLAIN, 10)
+            g.color = Color(0x77, 0x77, 0x77)
+            g.drawString("另有 ${engine.inventory.size - shown} 件未显示", px + 24, py + 218 + shown * 40)
+        }
+
+        // ---- 手牌一览 ----
+        val rx = px + (pw * 0.60).toInt() + 10
+        g.font = Font("Microsoft YaHei", Font.BOLD, 12)
+        g.color = Color(0xCC, 0xCC, 0xCC)
+        g.drawString("手牌 ${engine.hand.size}/${GameEngine.HAND_MAX}", rx, py + 66)
+        var hy = py + 84
+        for (c in engine.hand.take(8)) {
+            g.font = Font("Microsoft YaHei", Font.PLAIN, 10)
+            g.color = Color(c.category.color)
+            g.drawString(clip(c.name, g.fontMetrics, pw - (rx - px) - 30), rx, hy)
+            hy += 16
+            g.color = Color(0x88, 0x88, 0x88)
+            g.drawString(clip(c.desc, g.fontMetrics, pw - (rx - px) - 30), rx, hy)
+            hy += 22
+        }
+
+        // 关闭
+        drawButton(g, px + pw - 128, py + ph - 54, 104, 36, "关闭", "bpclose")
+        g.font = Font("Microsoft YaHei", Font.PLAIN, 10)
+        g.color = Color(0x8F, 0x8F, 0x8F)
+        g.drawString(bagHint, px + 24, py + ph - 24)
     }
 
     private fun drawMerchant(g: Graphics2D) {
@@ -738,6 +920,17 @@ class GameView(
             val ph = 320
             val px = (width - pw) / 2
             val py = (height - ph) / 2
+            // 左下角版本号：连点 6 次唤起管理员验证（不写进任何说明文档）
+            if (inRect(x, y, px + 12, py + ph - 26, 150, 22)) {
+                menuVerClicks++
+                if (menuVerClicks >= 6) {
+                    menuVerClicks = 0
+                    menuOverlay = false
+                    repaint()
+                    host.requestAdmin()
+                }
+                return
+            }
             var by = py + 68
             val items = listOf("resume", "restart", "opts", "exit")
             for (k in items) {
@@ -751,6 +944,27 @@ class GameView(
                     return
                 }
                 by += 56
+            }
+            return
+        }
+
+        if (backpackOpen) {
+            val r = bpRect()
+            val px = r[0]; val py = r[1]; val pw = r[2]; val ph = r[3]
+            val shown = min(engine.inventory.size, 5)
+            for (i in 0 until shown) {
+                val rr = itemRowRect(i)
+                if (inRect(x, y, rr[0], rr[1], rr[2], rr[3])) {
+                    engine.useItem(i)
+                    bagHint = "已使用道具"
+                    host.afterAction()
+                    return
+                }
+            }
+            if (inRect(x, y, px + pw - 128, py + ph - 54, 104, 36)) {
+                backpackOpen = false
+                repaint()
+                return
             }
             return
         }
@@ -793,9 +1007,8 @@ class GameView(
         if (host.adminActive && Math.pow((x - (width - 46)).toDouble(), 2.0) + Math.pow((y - 82).toDouble(), 2.0) <= 24 * 24) {
             host.showAdminPanel(); return
         }
-        if (inRect(x, y, 14, height - 246, 76, 34)) { host.openInventory(); return }
-        if (inRect(x, y, 14, height - 206, 76, 34)) { host.openInventory(); return }
-        if (inRect(x, y, width - 132, height - 246, 118, 40)) { host.endTurn(); return }
+        if (inRect(x, y, 14, height - 128, 54, 54)) { backpackOpen = true; bagHint = ""; repaint(); return }
+        if (inRect(x, y, width - 152, height - 120, 138, 44)) { host.endTurn(); return }
 
         // 怪物选择
         val mi = monsterAt(x, y)
@@ -848,6 +1061,27 @@ class GameView(
             }
             return ""
         }
+        if (backpackOpen) {
+            val r = bpRect()
+            val px = r[0]; val py = r[1]; val pw = r[2]; val ph = r[3]
+            val shown = min(engine.inventory.size, 5)
+            for (i in 0 until shown) {
+                val rr = itemRowRect(i)
+                if (inRect(x, y, rr[0], rr[1], rr[2], rr[3])) {
+                    engine.useItem(i)
+                    bagHint = "已使用道具"
+                    host.afterAction()
+                    return ""
+                }
+            }
+            if (inRect(x, y, px + pw - 128, py + ph - 54, 104, 36)) {
+                backpackOpen = false
+                repaint()
+                return ""
+            }
+            return ""
+        }
+
         if (merchantOpen) {
             val pw = min(width - 80, 660); val ph = 420
             val px = (width - pw) / 2; val py = (height - ph) / 2
@@ -864,9 +1098,19 @@ class GameView(
         }
         if (inRect(x, y, 14, 16, 72, 30)) return "menu"
         if (host.adminActive && Math.abs(x - (width - 46)) <= 24 && abs(y - 82) <= 24) return "admin"
-        if (inRect(x, y, 14, height - 246, 76, 34)) return "bag"
-        if (inRect(x, y, 14, height - 206, 76, 34)) return "item"
-        if (inRect(x, y, width - 132, height - 246, 118, 40)) return "end"
+        if (backpackOpen) {
+            val r = bpRect()
+            val px = r[0]; val py = r[1]; val pw = r[2]; val ph = r[3]
+            val shown = min(engine.inventory.size, 5)
+            for (i in 0 until shown) {
+                val rr = itemRowRect(i)
+                if (inRect(x, y, rr[0], rr[1], rr[2], rr[3])) return "item$i"
+            }
+            if (inRect(x, y, px + pw - 128, py + ph - 54, 104, 36)) return "bpclose"
+            return ""
+        }
+        if (inRect(x, y, 14, height - 128, 54, 54)) return "bag"
+        if (inRect(x, y, width - 152, height - 120, 138, 44)) return "end"
         return ""
     }
 

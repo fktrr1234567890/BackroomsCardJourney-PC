@@ -27,7 +27,26 @@ object BgmThemes {
     private fun scaleOf(root: Double, steps: List<Double>): List<Double> =
         steps.map { root * Math.pow(2.0, it / 12.0) }
 
-    fun forStage(index: Int, theme: Int): BgmTheme {
+    /** 每一关都有自己的配乐：在主题音色上再按关卡号做移调、变速与音阶轮转 */
+    fun forStage(index: Int, theme: Int): BgmTheme = vary(baseTheme(index, theme), index)
+
+    private fun vary(t: BgmTheme, index: Int): BgmTheme {
+        val step = if (t.scale.isEmpty()) 0 else (index % t.scale.size)
+        val scale = t.scale.drop(step) + t.scale.take(step)
+        val tempo = 1.0 + ((index % 5) - 2) * 0.075
+        val dens = (t.density + ((index % 3) - 1) * 0.05).coerceIn(0.08, 0.6)
+        val noises = (t.noise + ((index % 4) - 1.5) * 0.012).coerceIn(0.0, 0.12)
+        val detune = ((index % 9) - 4) * 1.2
+        return BgmTheme(
+            t.name + " · 第${index + 1}层",
+            t.drone.map { it * (1.0 + detune / 600.0) },
+            scale.map { it * (1.0 + detune / 900.0) },
+            t.interval * (2.0 - tempo),
+            t.buzz, noises, dens
+        )
+    }
+
+    private fun baseTheme(index: Int, theme: Int): BgmTheme {
         val detune = ((index % 7) - 3) * 0.6
         return when (theme) {
             0 -> BgmTheme(

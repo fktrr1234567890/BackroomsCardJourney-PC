@@ -1,120 +1,94 @@
-# 后室卡牌之旅 · Windows 桌面版
+# 后室卡牌之旅 · Backrooms Card Journey
 
-《后室卡牌之旅》的 Windows 电脑端版本，规则、关卡、卡牌、道具与安卓版完全一致，界面从 Android 原生控件改写为 **Kotlin + Swing** 手工绘制，去掉一切 Android 依赖。
+> 一款以「后室」为舞台的单人卡牌 Roguelike：在无尽的走廊里打牌、求生、往下走。
+> A single-player card roguelike set in the Backrooms: play cards, survive, and descend.
 
-当前版本：**0.0.7**
+![version](https://img.shields.io/badge/version-0.1.0--beta1-E8C547)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android-5AA8E0)
+![license](https://img.shields.io/badge/license-MIT-8F8F8F)
 
-## 系统兼容性
+---
 
-| 场景 | 要求 | 用哪个包 |
-| --- | --- | --- |
-| Windows 7 | Java 8（JRE 8，位数与系统一致） | `BackroomsCardJourney-0.0.7-win7-java8.zip` → `run-win7.bat` |
-| Windows 8 / 10 / 11 | 无（自带运行时） | `BackroomsCardJourney-0.0.7-windows-exe.zip` → 双击 `BackroomsCardJourney.exe` |
-| 任意 Windows + 已装 JDK 17 | 无 | `BackroomsCardJourney-0.0.7-windows.zip` → `bin\BackroomsCardJourney-pc.bat` |
+## 中文
 
-兼容性做法：**编译目标固定为 Java 8 字节码（class 52）**，源码不使用任何 JDK 9+ 的 API，因此同一份 class 既能跑在 Win7 的 JRE 8 上，也能跑在更高版本的 JDK 上。Win7 包是单文件可执行 jar（已内联 kotlin-stdlib），不需要 jpackage、不需要改注册表。
+### 这是什么
 
-## 特性
+《后室卡牌之旅》把后室的阈限走廊压缩成一副牌。每一层都是一次短局：寻找线索、击退徘徊者、破解这一层的规则，然后在灯灭之前继续往下。
 
-- 30 个固定层级 + 无限模式，6 套层级配色，卡组构筑回合制玩法
-- 手绘透视走廊背景（Java2D）：墙面拼板、灯组闪烁、地砖、管道、污渍、颗粒与暗角
-- 背景音乐按层级主题分轨，6 套音色合成（实时生成波形，`javax.sound.sampled` 播放，无音频素材文件）
-- 卡牌按稀有度加权刷新，不会一开局就满地强力牌
-- 刷牌按钮：花金币刷新本回合报价，每回合限 4 次；取消买卡不会重置报价
-- NPC 系统：幸存者 / 医生 / 士兵 / 商人可交谈交易，邪教徒 / 掠夺者敌对；孤立层级不刷新 NPC
-- 假随机动态难度：手牌越多怪物越强越勤，手牌少时整层可能安静无事
-- 存档写在用户目录 `~/.backrooms_cardjourney/save.properties`，含角色解锁进度与无限模式最高分
+- **三层结构**：30 个正式层级 + 无限回廊 + 仅供无限模式出现的特殊层级
+- **手绘对局画面**：透视走廊、会闪的灯组、扇形手牌、事件条，全部矢量自绘
+- **卡牌驱动**：战斗、防御、移动、精神、交易等八大类牌组，越稀有的牌附带越多机制
+- **装备与商人**：回合结束时可能遇到商人，用金币换装备，最多携带四件
+- **遇见的人**：幸存者、医生、士兵、商人、邪教徒、掠夺者，以及更多只在深层的面孔
+- **每层都有自己的样子与声音**：背景配色、道具陈设与配乐随层级变化
 
-## 运行
+### 运行
 
-Release 里下对应的包，解压后：
+| 平台 | 方式 |
+| --- | --- |
+| Windows 10 / 11 | 下载 `windows-exe.zip` 解压后运行 `BackroomsCardJourney.exe` |
+| Windows 7+（Java 8） | 下载 `win7-java8.zip`，安装 Java 8 后运行 `run-win7.bat` |
+| 任意带 JRE 的系统 | 下载 `windows.zip`，`java -jar BackroomsCardJourney-pc-*.jar` |
+| Android 8.0+ | 下载安卓仓库的 APK 包安装 |
 
-- Windows 7：装好 JRE 8，双击 `run-win7.bat`
-- Windows 8 / 10 / 11：双击 `BackroomsCardJourney.exe`（免安装 exe 目录里那个）
-- 分发包：`bin\BackroomsCardJourney-pc.bat`
+### 操作
 
-源码方式（需要 Gradle 8.2+，JDK 8 或更高均可）：
+- 点击手牌打出：费用消耗行动力，回合结束自动补牌
+- 点击怪物切换当前目标；左下角背包图标打开装备与道具
+- 右下角「结束回合」推进时间，右上角显示层级或轮回数
+- `Esc` 打开对局菜单
 
-```bat
-gradle run
-```
+### 说明
 
-仓库里也放了两个快捷脚本：
+- 存档位于用户目录，退出后可从主菜单「继续」进入
+- 音效与音乐音量、界面亮度可在「选项」中调整
+- 版本号带 `beta` 字样表示测试版，功能与数值仍在调整
 
-```bat
-run-windows.bat   :: 已装 JDK，自动 gradle installDist 后启动
-run-win7.bat      :: 只有 JRE 8 的老系统，直接 java -jar 启动
-```
+### 反馈
 
-## 打包
+请通过仓库的 Issues 提交问题，附上平台、版本号与复现步骤。
 
-1. 可分发 zip（含 `bin` 启动脚本与依赖 jar）：
+---
 
-```bat
-gradle distZip
-```
+## English
 
-产物在 `build\distributions\BackroomsCardJourney-pc-0.0.7.zip`。
+### What it is
 
-2. 单文件可执行 jar（Win7 / JRE 8 用，已内联 kotlin-stdlib）：
+A compact roguelike about the Backrooms. Each level is a short run: search for clues, push back whatever is walking the corridor, learn the rules of the floor, and descend before the lights go out.
 
-```bat
-gradle fatJar
-```
+- **Structure**: 30 handcrafted levels, an endless corridor, and rare special floors that only appear in endless mode
+- **Hand-drawn board**: perspective corridor, flickering lamps, fan-shaped hand, event bar — all vector-rendered
+- **Card-driven**: eight categories of cards (combat, defense, movement, mental, trade, and more); rarer cards carry extra mechanics
+- **Equipment and merchants**: a merchant may appear at the end of a turn; up to four pieces of gear can be carried
+- **People you meet**: survivors, medics, soldiers, merchants, cultists, raiders — and faces that only show up deeper down
+- **Every floor looks and sounds different**: palette, props and soundtrack change with the level
 
-产物在 `build\libs\BackroomsCardJourney-pc-0.0.7-win7.jar`。
+### Running
 
-3. 免安装 exe 目录（jpackage，需要 JDK 17+ 自带 jpackage）：
+| Platform | How |
+| --- | --- |
+| Windows 10 / 11 | Unzip `windows-exe.zip` and run `BackroomsCardJourney.exe` |
+| Windows 7+ (Java 8) | Unzip `win7-java8.zip`, install Java 8, run `run-win7.bat` |
+| Any JRE | Unzip `windows.zip`, run `java -jar BackroomsCardJourney-pc-*.jar` |
+| Android 8.0+ | Install the APK from the Android repository |
 
-```powershell
-powershell -ExecutionPolicy Bypass -File package-windows.ps1
-```
+### Controls
 
-产物在 `dist\BackroomsCardJourney\`，`-Installer` 参数可改装成 MSI（需要 WiX Toolset）。注意 jpackage 打出的 exe 自带 JDK 17 运行时，**只适用于 Windows 10 及以上**；Win7 请用第 2 种方式。
+- Click a card to play it; cards cost action points and refill at end of turn
+- Click a monster to set the current target; the bag icon at bottom-left opens gear and items
+- "End turn" at bottom-right advances time; the top-right shows the level or cycle count
+- `Esc` opens the in-game menu
 
-## 构建与测试
+### Notes
 
-```bat
-gradle build
-```
+- Saves live in the user directory; "Continue" on the main menu resumes a run
+- Music, sound and brightness are adjustable in Options
+- A `beta` suffix means a test build: values and features may still change
 
-`gradle build` 会编译主源码并跑 25 个纯 JVM 单元测试（GameEngine / 卡牌 / NPC / 关卡库全部覆盖）。CI 见 `.github/workflows/build.yml`，包含两个 job：`windows-latest + JDK 17` 打正式包，`JDK 8` 专门验证 Java 8 字节码与测试（保证 Win7 兼容）。
+### Feedback
 
-## 目录结构
+Open an issue on this repository with your platform, version and reproduction steps.
 
-```
-src/main/kotlin/com/backrooms/cardjourney/
-├── Main.kt              程序入口、深色主题
-├── MainWindow.kt        全部界面（主菜单 / 角色 / 对局 / 设置 / 关于）
-├── CorridorRenderer.kt  Java2D 透视走廊背景
-├── MusicPlayer.kt       分轨背景音乐合成与播放
-├── GameEngine.kt        核心规则引擎（与平台无关）
-├── CardData.kt          卡牌库
-├── ItemData.kt          道具库
-├── NpcData.kt           NPC 数据与行为
-└── StageData.kt         30 层关卡与无限模式
-src/test/kotlin/com/backrooms/cardjourney/
-└── GameEngineTest.kt    25 个单元测试
-```
+---
 
-## 操作
-
-- 点击手牌即打出；点怪物卡片可切换当前目标
-- `结束回合` 结算怪物行动、回复行动力
-- `买卡` 从本回合报价里挑一件；`刷牌` 花金币换一批
-- `ESC` 随时回到主菜单（自动存档）
-- 设置里可调背景音乐、音效与画面亮度
-
-## 发布
-
-改 `release/VERSION` 里的版本号并 push 到 `main`，`Release` 工作流会自动构建三种产物（分发包 / 单文件 jar / exe）并发布到 GitHub Release（tag 形如 `v0.0.7`）。
-
-## 许可
-
-MIT License，见 [LICENSE](LICENSE)。
-
-## 更新日志
-
-- **0.0.7**：修复无限模式循环 bug。根因是 30 层通关时 `finishedAll` 被置为 true，进入无限模式后没清掉，导致每打完一轮又弹“全部 30 关通关”，选“进入无限”又把轮次归零回到第一轮，形成死循环。现在 `startStage` / `advance` / `enterInfiniteMode` 都会清掉该标记，无限模式只推进轮次，并补了 3 条回归测试。
-- **0.0.6**：字节码降为 Java 8（class 52），支持 Windows 7，新增单文件 jar 与 `run-win7.bat`。
-- **0.0.5**：Windows 桌面版首版（Swing 重写）。
+MIT License · 详见 `LICENSE`

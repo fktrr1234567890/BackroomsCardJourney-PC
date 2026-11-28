@@ -40,7 +40,8 @@ $args = @(
     "--input", $libDir,
     "--main-jar", $jarName,
     "--main-class", "com.backrooms.cardjourney.MainKt",
-    "--dest", $Dest
+    "--dest", $Dest,
+    "--icon", "assets\icon.ico"
 )
 if ($Installer) {
     $args += @("--win-shortcut", "--win-menu")
